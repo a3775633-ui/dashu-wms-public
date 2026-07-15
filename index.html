@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>大樹 WMS 原型</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="stylesheet" href="./styles.css?v=20260715-dashboard3" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="./wms-data.js?v=20260715-dashboard3" defer></script>
+    <script src="./app.js?v=20260715-dashboard3" defer></script>
+  </head>
+  <body>
+    <main id="loginScreen" class="login-screen">
+      <section class="login-visual" aria-label="大樹 WMS 登入視覺">
+        <div class="tree-scene">
+          <div class="sun-ring"></div>
+          <div class="tree-crown crown-a"></div>
+          <div class="tree-crown crown-b"></div>
+          <div class="tree-crown crown-c"></div>
+          <div class="tree-trunk"></div>
+          <div class="ground"></div>
+        </div>
+        <div class="login-copy">
+          <p>Dashu Warehouse Management System</p>
+          <h1>大樹 WMS</h1>
+          <span>進貨、出貨、庫存、GDP、異常與 Daily 看板整合原型</span>
+        </div>
+      </section>
+
+      <section class="login-card" aria-label="登入">
+        <button id="logoEnter" class="brand-lockup" type="button">
+          <span class="brand-mark">大</span>
+          <span>
+            <strong>大樹 WMS</strong>
+            <small>原型入口</small>
+          </span>
+        </button>
+        <label>
+          <span>帳號</span>
+          <input value="12772" autocomplete="username" />
+        </label>
+        <label>
+          <span>密碼</span>
+          <input value="dashuwms" type="password" autocomplete="current-password" />
+        </label>
+        <button id="loginButton" class="primary-button" type="button">
+          <i data-lucide="log-in"></i>
+          登入原型
+        </button>
+        <button class="ghost-button" type="button">以 SSO 管理系統登入</button>
+        <p class="login-note">Prototype v0.1 - 供需求討論與廠商會議使用</p>
+      </section>
+    </main>
+
+    <main id="appShell" class="app-shell is-hidden">
+      <header class="topbar">
+        <div class="warehouse-switcher">
+          <button id="warehouseButton" class="warehouse-button" type="button">
+            <span id="warehouseCode">WH05</span>
+            <i data-lucide="chevron-down"></i>
+          </button>
+          <div id="warehouseMenu" class="warehouse-menu is-hidden"></div>
+        </div>
+        <nav id="topNav" class="top-nav" aria-label="主模組"></nav>
+        <div class="worker-tool">
+          <i data-lucide="user-round"></i>
+          <span>承華 / 物流企劃</span>
+        </div>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar">
+          <div class="side-title">
+            <span id="sideTitle">工作台</span>
+            <button id="collapseButton" class="icon-button" type="button" title="收合側欄">
+              <i data-lucide="panel-left-close"></i>
+            </button>
+          </div>
+          <nav id="sideNav" class="side-nav" aria-label="子模組"></nav>
+        </aside>
+
+        <section class="content">
+          <div id="pageRoot"></div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
