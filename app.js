@@ -1,4 +1,46 @@
-const warehouses = [
+import {
+  WAREHOUSES as warehouses,
+  MODULES as modules,
+  getVisibleModules as getConfiguredVisibleModules,
+  getVisibleChildren,
+  getDailyReportProfile,
+  filterReportRows,
+  getDashboardDefinition,
+  getOutboundReportProfile,
+  getInventoryReportProfile,
+  getReturnReportProfile,
+  getLaborReportProfile,
+  getP1ReportProfile,
+  getWarehouseOperationalProfile
+} from "./wms-domain.mjs";
+import { getQuarterlyKpiModel, getQuarterlyMilestoneModel } from "./wms-quarterly-data.mjs";
+import { renderQuarterlyFilters, renderQuarterlyKpiTab, renderQuarterlyMilestoneTab, buildCurrentQuarterExport, buildQuarterWorkbookSheets } from "./wms-quarterly-view.mjs";
+import { createXlsxWorkbook } from "./wms-excel-export.mjs";
+import { getDashboardModel } from "./wms-dashboard-data.mjs";
+import { renderDashboardCharts } from "./wms-dashboard-view.mjs";
+import {
+  getDailyReportCenterModel,
+  getMonthlyReportModel,
+  getKeyNumbersModel,
+  getExpenseHierarchyModel,
+  getMetricDrilldownModel,
+  getDailyDrilldownTarget
+} from "./wms-report-center-data.mjs";
+import {
+  renderDailyReportCenter,
+  renderMonthlyReport,
+  renderKeyNumbers,
+  renderExpenseHierarchy,
+  renderMetricDrilldown,
+  buildDailyExportSheets,
+  buildMonthlyExportSheets,
+  buildKeyNumbersExportSheets
+} from "./wms-report-center-view.mjs";
+import { appendOperationalNote } from "./wms-report-center.mjs";
+import { getWarehouseDataStatus, getWarehouseHomeProfile } from "./wms-warehouse-profiles.mjs";
+
+/* Legacy definitions retained temporarily while report profiles are migrated. */
+/* const warehouses = [
   { code: "WH01", name: "大豐一般倉", type: "一般倉", focus: "門市配送、一般庫存、出貨達成" },
   { code: "WH02", name: "大豐採品倉(000112)", type: "採品倉", focus: "採品、管罐玩具、採購補貨" },
   { code: "WH03", name: "新屋西藥倉(GDP)", type: "GDP / 西藥", focus: "GDP效期、批號、可用庫存、未上架QC" },
@@ -7,16 +49,16 @@ const warehouses = [
   { code: "WH06", name: "高邊退貨倉", type: "退貨倉", focus: "退貨分類、報廢銷毀、不可退廠、90天未異動" },
   { code: "WH07", name: "帳務及庶務倉", type: "帳務庶務", focus: "未拋帳、帳實差異、TMS派車、費用與權限" },
   { code: "WH08", name: "後送中心倉", type: "處方籤 / 零散藥品", focus: "處方籤、零散藥品、缺藥與交接" }
-];
+]; */
 
-const modules = [
+/* const modules = [
   {
     id: "home",
     label: "Home",
     icon: "layout-dashboard",
     title: "工作台",
     defaultChild: "今日工作台",
-    children: ["今日工作台", "全倉總覽", "P1待處理", "各倉狀態"]
+    children: ["今日工作台", "全倉總覽", "P1待處理", "需求追蹤", "各倉狀態"]
   },
   {
     id: "inbound",
@@ -27,20 +69,12 @@ const modules = [
     children: ["到貨通知大表", "進貨大報表", "驗收作業", "驗收差異", "理貨上架", "未上架QC", "短效效期比對"]
   },
   {
-    id: "returns",
-    label: "退貨作業",
-    icon: "package-search",
-    title: "退貨作業",
-    defaultChild: "公告退貨工作台",
-    children: ["公告退貨工作台", "PDA收貨", "待判定 / 隔離", "處置任務", "退廠 / 調撥", "報廢銷毀", "退貨追溯"]
-  },
-  {
     id: "transfer",
     label: "移交",
     icon: "shuffle",
     title: "移交",
-    defaultChild: "任務交接",
-    children: ["任務交接", "保管責任交接", "跨倉調撥", "在途逾時與差異"]
+    defaultChild: "調整庫存移交",
+    children: ["商品可用化明細", "查詢搬運作業", "查詢搬運等待", "查詢搬運明細", "庫存移交計畫", "庫存移交現況", "調整庫存移交", "跨倉分配明細"]
   },
   {
     id: "location",
@@ -48,7 +82,7 @@ const modules = [
     icon: "map-pin",
     title: "位置",
     defaultChild: "儲位查詢",
-    children: ["儲位查詢", "儲位主檔批次建置", "儲位標籤列印", "PDA驗證與啟用", "庫區與容量", "溫層區管理"]
+    children: ["儲位查詢", "庫區查詢", "儲位使用率", "儲位滿載率", "平面儲位容量", "溫層區管理"]
   },
   {
     id: "inventoryMove",
@@ -64,7 +98,7 @@ const modules = [
     icon: "boxes",
     title: "管理庫存",
     defaultChild: "庫存查詢",
-    children: ["庫存查詢", "庫存大報表", "每日庫存快照", "庫齡 / 90天未異動", "庫存狀態", "盤點稽核", "SN流水"]
+    children: ["庫存查詢", "庫存大報表", "每日庫存快照", "庫齡 / 90天未異動", "可用 / 暫用 / 已揀 / 不可用", "盤點稽核", "SN流水"]
   },
   {
     id: "outbound",
@@ -72,15 +106,15 @@ const modules = [
     icon: "truck",
     title: "出貨管理",
     defaultChild: "出貨大報表",
-    children: ["訂單接收", "訂單配庫", "出貨履約總覽", "出貨覆核", "出貨明細", "配送交接", "EXSD Miss"]
+    children: ["訂單接收", "出貨大報表", "應出未出", "有庫未出", "無庫未出", "出貨明細", "配送交接", "EXSD Miss"]
   },
   {
     id: "outboundWork",
     label: "出貨工作",
     icon: "scan-line",
     title: "出貨工作",
-    defaultChild: "波次 / 派工",
-    children: ["波次 / 派工", "補貨", "揀貨", "覆核", "裝箱", "分貨 / 集貨", "裝車點交", "出貨確認", "PDA作業Log"]
+    defaultChild: "揀貨下架",
+    children: ["揀貨下架", "波次任務", "補貨 / 缺庫", "裝箱包貨", "分貨疊貨", "裝車載貨", "PDA作業Log"]
   },
   {
     id: "gdp",
@@ -96,7 +130,7 @@ const modules = [
     icon: "circle-alert",
     title: "異常",
     defaultChild: "異常閉環",
-    children: ["異常閉環", "外部 / 人工通報", "重複異常分析", "原因碼主檔", "責任單位矩陣"]
+    children: ["異常閉環", "Line異常", "SLA逾時", "責任單位矩陣", "重複異常", "異常原因碼"]
   },
   {
     id: "labor",
@@ -104,7 +138,7 @@ const modules = [
     icon: "users-round",
     title: "人效",
     defaultChild: "報工稼動",
-    children: ["報工稼動", "作業效率", "班別組別量能", "人貨二次比對", "技能授權矩陣"]
+    children: ["報工稼動", "作業效率", "班別組別量能", "人貨二次比對", "訓練與責任追蹤"]
   },
   {
     id: "reports",
@@ -119,8 +153,8 @@ const modules = [
     label: "Dashboard",
     icon: "chart-no-axes-combined",
     title: "Dashboard",
-    defaultChild: "全倉營運達標總覽",
-    children: ["全倉營運達標總覽", "入庫作業健康", "出貨履約監控", "庫存健康與可用性", "人效與稼動管理", "異常責任與閉環", "營運成本與單位成本"]
+    defaultChild: "全倉經營總覽",
+    children: ["全倉經營總覽", "電商倉營運", "入庫健康", "庫存健康", "異常閉環", "營運成本"]
   },
   {
     id: "settings",
@@ -130,15 +164,61 @@ const modules = [
     defaultChild: "角色權限",
     children: ["角色權限", "倉別權限", "欄位權限", "操作紀錄", "主檔參數"]
   }
-];
+]; */
 
 const state = {
   warehouse: warehouses[4],
   activeModule: "home",
   activeChild: "今日工作台",
-  expandedP1Category: null,
   showColumnPanel: false,
-  currentExport: { title: "大樹WMS報表", columns: [], rows: [] }
+  currentExport: { title: "大樹WMS報表", columns: [], rows: [] },
+  reportCenterWorkbook: { title: "大樹WMS_報表中心", sheets: [] },
+  dashboardSelection: null,
+  reportFilters: { businessDate: "2026-07-16", status: "全部狀態", keyword: "" },
+  dailyReportFilters: {
+    businessDate: "2026-07-16",
+    warehouseCode: "WH05",
+    dimension: "進貨",
+    reportId: "daily_inbound",
+    status: "全部狀態",
+    keyword: ""
+  },
+  monthlyReportFilters: {
+    yearMonth: "2026-07",
+    warehouseCode: "ALL",
+    compareMode: "上月",
+    dimension: "全部方向",
+    keyword: ""
+  },
+  keyNumberFilters: {
+    yearMonth: "2026-07",
+    warehouseCode: "ALL",
+    compareMode: "上月",
+    dimension: "全部方向",
+    keyword: ""
+  },
+  monthlyUi: { selectedDimension: "進貨", selectedMetricId: "arrival_rate" },
+  keyNumberUi: {
+    selectedDimension: "進貨",
+    selectedMetricId: "",
+    expenseLevel: "summary",
+    selectedExpenseCategory: "",
+    selectedAccountName: "",
+    selectedExpenseItem: ""
+  },
+  operationalNotes: [],
+  quarterlyTab: "kpi",
+  quarterlyGranularity: "week",
+  selectedQuarterlyMetricId: "commitment_ship_rate",
+  selectedQuarterlyPoint: "",
+  quarterlyFilters: {
+    year: 2026,
+    quarter: "Q3",
+    warehouseCode: "ALL",
+    dimension: "全部面向",
+    status: "全部狀態",
+    keyword: ""
+  }
 };
 
 const dailySummaryRows = [
@@ -226,27 +306,6 @@ const baseReportProfiles = {
       ["Daily來源", "現場庫存PCS、已用儲位、儲位滿載率、呆滯庫存、效期預警"],
       ["PDA節點", "移儲、鎖庫、解鎖、盤點、補貨、揀貨扣帳"],
       ["下鑽", "倉別→樓層/區域→儲位→SKU→批號/效期→庫存狀態"]
-    ]
-  },
-  gdp: {
-    title: "效期風險大表",
-    subtitle: "把進貨效期、庫內最短效期、近效短效、批號完整率、未上架QC與採購允收規則放在同一張每日必看報表。",
-    source: "GDP八報表 / 效期與批號每日必看報表",
-    kpis: [
-      ["效期異常SKU", "12", "R1 / 效期快照"],
-      ["未上架QC", "980 PCS", "R7 未上架QC"],
-      ["不可用庫存", "1,060 PCS", "R6 庫存明細"],
-      ["批號完整率", "98.4%", "R5 出貨追溯"]
-    ],
-    columns: ["倉別", "供應商", "SKU", "品名", "進貨批號", "進貨效期", "庫內最短效期", "效期差異天數", "通知應收PCS", "驗收入庫PCS", "未上架QC", "允收判斷", "責任單位", "Daily指標"],
-    rows: [
-      ["WH03", "藥廠A", "GDP-001", "藥品A", "B260701", "2027-01-05", "2027-03-01", "-55", 1000, 980, 980, status("待採購確認", "warn"), "採購/GDP窗口", "GDP八報表 / 效期異常"],
-      ["WH08", "藥廠E", "RX-011", "處方藥B", "B260705", "2026-10-01", "2026-12-01", "-61", 80, 60, 60, status("待確認", "warn"), "後送中心", "未上架QC"]
-    ],
-    fieldNotes: [
-      ["GDP八報表", "R1效期異常、R2/R4驗收、R3上架、R5出貨、R6庫存、R7 QC、R8訂單"],
-      ["Daily來源", "通知應收PCS、驗收入庫PCS、驗收差異PCS、未上架QC、可用庫存出貨達成率"],
-      ["下鑽", "供應商→SKU→批號→效期→允收規則→責任單位"]
     ]
   }
 };
@@ -468,11 +527,7 @@ function isGdpWarehouse(warehouse = state.warehouse) {
 }
 
 function getVisibleModules() {
-  return modules.filter((item) => {
-    if (item.id === "gdp") return isGdpWarehouse();
-    if (item.id === "returns") return state.warehouse.code === "WH06";
-    return true;
-  });
+  return getConfiguredVisibleModules(state.warehouse.code);
 }
 
 function enterApp() {
@@ -516,12 +571,9 @@ function renderTopNav() {
 
 function renderSideNav() {
   const mod = moduleById(state.activeModule);
-  const children = getVisibleChildrenForState(mod);
-  if (!children.includes(state.activeChild)) {
-    state.activeChild = children[0] || mod.defaultChild;
-  }
+  const visibleChildren = getVisibleChildren(state.warehouse.code, mod.id);
   document.querySelector("#sideTitle").textContent = mod.title;
-  document.querySelector("#sideNav").innerHTML = children.map((child) => `
+  document.querySelector("#sideNav").innerHTML = visibleChildren.map((child) => `
     <button type="button" class="${child === state.activeChild ? "is-active" : ""}" data-child="${child}">
       <i data-lucide="${mod.icon}"></i>
       ${child}
@@ -529,44 +581,28 @@ function renderSideNav() {
   `).join("");
 }
 
-function getVisibleChildrenForState(mod = moduleById(state.activeModule)) {
-  if (["home", "dashboard"].includes(mod.id)) return mod.children;
-  return DASHU_WMS.getVisibleChildren(mod.id, state.warehouse.code);
-}
-
-function pageHeader(title, subtitle, breadcrumb = "大樹 WMS 原型") {
+function pageHeader(title, _subtitle, breadcrumb = "大樹 WMS 原型", actionMode = "default") {
   return `
     <div class="page-header">
       <div>
         <p class="breadcrumb">${breadcrumb} / ${state.warehouse.code} ${state.warehouse.name}</p>
         <h2>${title}</h2>
-        <p>${subtitle}</p>
       </div>
       <div class="header-actions">
-        <button class="action-button" type="button" data-action="export-report"><i data-lucide="download"></i>匯出CSV</button>
-        <button class="action-button" type="button" data-action="column-settings"><i data-lucide="list-filter"></i>欄位設定</button>
+        ${actionMode === "quarter" ? `
+          <button class="action-button" type="button" data-quarter-export="current"><i data-lucide="download"></i>匯出目前篩選 XLSX</button>
+          <button class="action-button" type="button" data-quarter-export="workbook"><i data-lucide="file-spreadsheet"></i>匯出完整季度 Excel</button>
+        ` : actionMode === "report-center" ? `
+          <button class="action-button" type="button" data-action="export-report-center"><i data-lucide="file-spreadsheet"></i>匯出目前查詢 Excel</button>
+        ` : `<button class="action-button" type="button" data-action="export-report"><i data-lucide="download"></i>匯出Excel</button>
+          <button class="action-button" type="button" data-action="column-settings"><i data-lucide="list-filter"></i>欄位設定</button>`}
       </div>
     </div>
   `;
 }
 
-function renderDataQualityBanner({ period = "2026-07-09", updatedAt = "原型資料", completeness = "示意" } = {}) {
-  return `
-    <section class="data-quality-banner" aria-label="資料品質">
-      <strong>原型假資料</strong>
-      <span>資料期間：${period}</span>
-      <span>最後更新：${updatedAt}</span>
-      <span>完整率：${completeness}</span>
-    </section>
-  `;
-}
-
 function renderPage() {
   if (state.activeModule === "gdp" && !isGdpWarehouse()) {
-    state.activeModule = "home";
-    state.activeChild = moduleById("home").defaultChild;
-  }
-  if (state.activeModule === "returns" && state.warehouse.code !== "WH06") {
     state.activeModule = "home";
     state.activeChild = moduleById("home").defaultChild;
   }
@@ -581,83 +617,27 @@ function renderPage() {
     return;
   }
 
-  if (state.activeModule === "location" && state.activeChild === "儲位主檔批次建置") {
-    document.querySelector("#pageRoot").innerHTML = renderLocationBatch();
+  if (state.activeModule === "reports" && state.activeChild === "Daily報表中心") {
+    document.querySelector("#pageRoot").innerHTML = renderDailyReportCenterPage();
     return;
   }
 
-  if (state.activeModule === "inventoryMove" && state.activeChild === "庫存移交路徑") {
-    document.querySelector("#pageRoot").innerHTML = renderInventoryTrace();
+  if (state.activeModule === "reports" && state.activeChild === "全倉月報表") {
+    document.querySelector("#pageRoot").innerHTML = renderMonthlyReportPage();
+    return;
+  }
+
+  if (state.activeModule === "reports" && state.activeChild === "營運關鍵數字") {
+    document.querySelector("#pageRoot").innerHTML = renderKeyNumbersPage();
+    return;
+  }
+
+  if (state.activeModule === "reports" && state.activeChild === "WMS季度報表") {
+    document.querySelector("#pageRoot").innerHTML = renderQuarterlyReport();
     return;
   }
 
   document.querySelector("#pageRoot").innerHTML = renderChildPage();
-}
-
-function renderLocationBatch() {
-  const preview = DASHU_WMS.previewLocationBatch({ warehouseCode: state.warehouse.code, zoneCode: "Z01", aisleCode: "A", rackFrom: 1, rackTo: 2, levels: 2, bins: 2 });
-  const columns = ["儲位代號", "Barcode", "PDA驗證", "啟用狀態", "實體儲位"];
-  const rows = preview.map((item) => [item.code, item.barcodeType, item.pdaVerified ? "已驗證" : "待驗證", item.enabled ? "已啟用" : "未啟用", item.physical ? "是" : "否"]);
-  setCurrentExport("儲位主檔批次建置", columns, rows);
-  return `
-    ${pageHeader("儲位主檔批次建置", "依倉別－庫區－列－架－層－格批次預覽；核准、列印 Code 128、現場 PDA 驗證後才可啟用。", "位置")}
-    ${renderDataQualityBanner({ period: "建置批次預覽", updatedAt: "尚未寫入正式主檔", completeness: "8筆示意" })}
-    <section class="query-panel location-batch-form">
-      <div class="query-grid">
-        ${queryField("倉別", state.warehouse.code)}${queryField("庫區", "Z01")}${queryField("列", "A")}
-        ${queryField("架號", "001–002")}${queryField("層數", "02")}${queryField("每層格數", "02")}
-      </div>
-      <div class="query-actions"><button class="action-button" type="button">預覽與重複檢查</button><button class="action-button" type="button">送主管核准</button></div>
-    </section>
-    ${renderTable(columns, rows)}
-  `;
-}
-
-function renderInventoryTrace() {
-  const trace = DASHU_WMS.buildInventoryTrace("LPN260709001", state.warehouse.code);
-  const columns = ["事件時間", "事件", "來源倉儲位", "目的倉儲位", "交出人", "接收人", "PDA", "數量"];
-  const rows = trace.events.map((event) => [event.at, event.event, event.from, event.to, event.handedBy, event.receivedBy, event.device, event.quantity]);
-  setCurrentExport("庫存移交路徑", columns, rows);
-  return `
-    ${pageHeader("庫存移交路徑", "輸入商品編號、SKU ID 或 LPN，回查從到倉至今的完整經手與責任事件；只呈現掃描證據，不推測責任。", "庫存移動")}
-    ${renderDataQualityBanner({ period: "完整歷程示意", updatedAt: trace.events.at(-1).at, completeness: "事件鏈完整" })}
-    <section class="query-panel"><div class="query-grid">${queryField("商品編號 / SKU ID / LPN", trace.query, "search")}</div><div class="query-actions"><button class="action-button" type="button">查詢完整歷程</button></div></section>
-    <section class="trace-summary">
-      <div><strong>目前儲位</strong><span>${trace.currentLocation}</span></div>
-      <div><strong>目前保管責任</strong><span>${trace.currentCustodian}</span></div>
-      <div><strong>查詢鍵</strong><span>${trace.queryType}：${trace.query}</span></div>
-    </section>
-    <section class="trace-path" aria-label="庫存移交路徑">
-      ${trace.events.map((event, index) => `<div class="trace-node"><small>${index + 1}</small><strong>${event.event}</strong><span>${event.to}</span><em>${event.receivedBy}｜${event.at}</em></div>`).join("")}
-    </section>
-    ${renderTable(columns, rows)}
-  `;
-}
-
-function renderReturnWorkflow() {
-  const child = state.activeChild;
-  const timeline = DASHU_WMS.buildReturnTimeline("WH06-RT-S001-000012");
-  const columns = ["暫收LPN", "來源門市", "公告批次", "SKU ID", "商品", "批號", "效期", "實收PCS", "判定", "隔離儲位", "處置", "未結PCS"];
-  const rows = [
-    [timeline.lpn, "S001", "ANN-20260713", "SKU001", "公告回收商品A", "B260601", "2027-12-31", 12, "良品", "WH06-ISO-01", "待調撥", 12],
-    ["WH06-RT-S018-000013", "S018", "未列公告", "SKU118", "門市異常退回品", "B250101", "2026-09-01", 3, "待判定", "WH06-ISO-EX", "異常隔離", 3]
-  ];
-  setCurrentExport(`退貨作業_${child}`, columns, rows);
-  return `
-    ${pageHeader(child, "WH06 專用公告退貨閉環：門市有公告清單但無可掃條碼時，到退貨倉後由現場逐筆掃商品、來源門市、批效期與數量。", "退貨作業")}
-    ${renderDataQualityBanner({ period: "流程示意", updatedAt: "2026-07-14", completeness: "待正式介接" })}
-    <section class="workflow-steps">
-      ${["1 公告清單比對", "2 掃來源門市與商品", "3 建暫收LPN", "4 品況 / 效期判定與隔離", "5 退廠 / 調撥 / 批銷 / 報廢結清"].map((step) => `<div class="field-chip"><strong>${step}</strong></div>`).join("")}
-    </section>
-    <section class="field-map">
-      <div class="field-chip"><strong>三個不可跨越控制點</strong><span>無來源門市不得完成收貨；不符公告品不得入正常庫；未完成處置判定不得轉為可用庫存。</span></div>
-      <div class="field-chip"><strong>數量平衡</strong><span>實收＝退廠＋調撥＋批銷＋報廢＋未結，差異不為零即列 P1。</span></div>
-      <div class="field-chip"><strong>人工 Key 改造</strong><span>PDA 先取得事件證據；WMS 工作台負責主管判定、核准與結案。</span></div>
-    </section>
-    ${renderReportToolbar()}
-    ${renderTable(columns, rows)}
-    <section class="trace-path">${timeline.events.map((event, index) => `<div class="trace-node"><small>${index + 1}</small><strong>${event.event}</strong><span>${event.actor}</span><em>${event.at}</em></div>`).join("")}</section>
-  `;
 }
 
 function getReportProfile(type) {
@@ -669,21 +649,72 @@ function getReportProfile(type) {
 function getChildPageProfile() {
   const mod = moduleById(state.activeModule);
   const child = state.activeChild;
-  const spec = DASHU_WMS.getPageSpec(state.warehouse.code, state.activeModule, child);
-  if (!spec) {
+  const warehouseDataStatus = getWarehouseDataStatus(state.warehouse.code);
+  if (warehouseDataStatus === "待確認") {
     return {
       title: child,
-      status: "不適用",
-      queryFields: [],
-      actions: [],
-      kpis: [],
-      columns: ["資料狀態"],
-      rows: [["此倉別不適用此功能"]],
-      pdaEvents: [],
-      drilldown: []
+      source: mod.label,
+      dataStatus: "待確認",
+      columns: ["營運日期", "倉別", "資料狀態"],
+      rows: [],
+      kpis: [["資料狀態", "待確認", "不得自行補造"], ["作業數據", "資料不足", "待主管或會議確認來源"]],
+      fieldNotes: []
     };
   }
-  return spec;
+  const dailyReportProfile = getDailyReportProfile(state.warehouse.code, mod.id, child);
+  if (dailyReportProfile) return dailyReportProfile;
+  const warehouseOperationalProfile = getWarehouseOperationalProfile(
+    state.warehouse.code,
+    mod.id,
+    child,
+    state.reportFilters.businessDate
+  );
+  if (warehouseOperationalProfile) return warehouseOperationalProfile;
+  const outboundReportProfile = mod.id === "outbound" ? getOutboundReportProfile(state.warehouse.code, child, state.reportFilters.businessDate) : null;
+  if (outboundReportProfile) return outboundReportProfile;
+  const inventoryReportProfile = mod.id === "inventory" ? getInventoryReportProfile(state.warehouse.code, child, state.reportFilters.businessDate) : null;
+  if (inventoryReportProfile) return inventoryReportProfile;
+  const returnReportProfile = mod.id === "inbound" ? getReturnReportProfile(state.warehouse.code, child, state.reportFilters.businessDate) : null;
+  if (returnReportProfile) return returnReportProfile;
+  const laborReportProfile = mod.id === "labor" ? getLaborReportProfile(state.warehouse.code, child, state.reportFilters.businessDate) : null;
+  if (laborReportProfile) return laborReportProfile;
+  const explicit = childPageProfiles[state.activeModule]?.[child];
+  const profile = explicit ? { ...explicit } : buildChildPageProfile(mod, child);
+  const reportType = moduleReportType(state.activeModule);
+  const warehouseOverride = warehouseReportProfiles[state.warehouse.code]?.[reportType];
+
+  const candidate = warehouseOverride
+    ? {
+      ...profile,
+      title: profile.title,
+      subtitle: warehouseOverride.subtitle || profile.subtitle,
+      kpis: warehouseOverride.kpis || profile.kpis,
+      columns: warehouseOverride.columns || profile.columns,
+      rows: warehouseOverride.rows || profile.rows,
+      fieldNotes: warehouseOverride.fieldNotes || profile.fieldNotes,
+      source: warehouseOverride.source || profile.source
+    }
+    : profile;
+  return scopeFallbackProfile(candidate, state.warehouse.code);
+}
+
+function scopeFallbackProfile(profile, warehouseCode) {
+  const rows = Array.isArray(profile.rows) ? profile.rows : [];
+  const warehouseIndex = profile.columns.indexOf("倉別");
+  const scopedRows = warehouseIndex >= 0
+    ? rows.filter((row) => String(row[warehouseIndex] || "") === warehouseCode)
+    : rows.filter((row) => {
+        const warehouseCodes = row.flatMap((cell) => String(cell).match(/WH\d{2}/g) || []);
+        return warehouseCodes.length > 0 && warehouseCodes.every((code) => code === warehouseCode);
+      });
+  return {
+    ...profile,
+    dataStatus: scopedRows.length ? "原型資料" : "資料不足",
+    rows: scopedRows,
+    kpis: scopedRows.length
+      ? profile.kpis
+      : [["資料狀態", "資料不足", "沒有本倉已確認來源"], ["可匯出明細", "0", "不使用其他倉資料補位"]]
+  };
 }
 
 function moduleReportType(moduleId) {
@@ -733,35 +764,41 @@ function extraChildRows(moduleId, child) {
 function renderChildPage() {
   const mod = moduleById(state.activeModule);
   const profile = getChildPageProfile();
-  setCurrentExport(profile.title, profile.columns, profile.rows);
+  const visibleRows = filterProfileRows(profile);
+  setCurrentExport(profile.title, profile.columns, visibleRows);
   return `
-    ${pageHeader(profile.title, "", mod.label)}
-    ${renderDataQualityBanner({ period: "尚未介接", updatedAt: "未更新", completeness: profile.status })}
+    ${pageHeader(profile.title, profile.subtitle, profile.source || mod.label)}
+    <div class="data-status-strip"><strong>${profile.dataStatus || "資料不足"}</strong><span>${profile.rows.length ? `${profile.rows.length} 筆本倉資料` : "無本倉可用明細"}</span></div>
     ${renderColumnPanel(profile.columns)}
-    ${renderDedicatedToolbar(profile)}
     <section class="kpi-grid">
       ${profile.kpis.map(([label, value, note]) => kpi(label, value, note, mod.icon)).join("")}
     </section>
-    ${renderTable(profile.columns, profile.rows)}
-    ${profile.rows.length ? "" : renderEmptyOperationalState(profile)}
+    ${renderReportToolbar()}
+    ${renderTable(profile.columns, visibleRows)}
   `;
 }
 
-function renderDedicatedToolbar(profile) {
-  return `
-    <section class="query-panel compact-operational-toolbar">
-      <div class="query-grid">${profile.queryFields.map((field) => queryField(field, "")).join("")}</div>
-      <div class="query-actions">${profile.actions.map((action) => `<button class="action-button" type="button">${action}</button>`).join("")}</div>
-    </section>
-  `;
-}
-
-function renderEmptyOperationalState(profile) {
-  return `<section class="empty-operational-state"><strong>資料不足／尚未介接</strong><span>${profile.warehouseCode || state.warehouse.code} ${profile.warehouseName || state.warehouse.name} 尚無此功能的正式來源資料；不顯示其他倉或推定數值。</span></section>`;
+function filterProfileRows(profile) {
+  if (!profile.columns.includes("營運日期")) return profile.rows;
+  const dateIndex = profile.columns.indexOf("營運日期");
+  const warehouseIndex = profile.columns.indexOf("倉別");
+  const statusIndex = profile.columns.findIndex((column) => ["目前節點", "允收判定", "處置判定"].includes(column));
+  const normalizedRows = profile.rows.map((row) => ({
+    businessDate: String(row[dateIndex] || ""),
+    warehouseCode: String(row[warehouseIndex] || ""),
+    status: statusIndex >= 0 ? stripHtml(String(row[statusIndex] || "")) : "",
+    searchText: row.map((cell) => stripHtml(String(cell))).join(" "),
+    row
+  }));
+  return filterReportRows(normalizedRows, {
+    ...state.reportFilters,
+    warehouseCode: state.warehouse.code
+  }).map((item) => item.row);
 }
 
 function setCurrentExport(title, columns, rows) {
   state.currentExport = { title, columns, rows };
+  document.querySelector("#pageRoot")?.setAttribute("data-export-row-count", String(rows.length));
 }
 
 function renderReport(type) {
@@ -769,21 +806,110 @@ function renderReport(type) {
   setCurrentExport(profile.title, profile.columns, profile.rows);
   return `
     ${pageHeader(profile.title, profile.subtitle, profile.source || moduleById(state.activeModule).label)}
-    ${renderDataQualityBanner()}
     ${renderColumnPanel(profile.columns)}
     <section class="kpi-grid">
       ${profile.kpis.map(([label, value, note]) => kpi(label, value, note, "database")).join("")}
     </section>
     ${renderReportToolbar()}
     ${renderTable(profile.columns, profile.rows)}
-    <section class="field-map">
-      ${profile.fieldNotes.map(([title, text]) => `
-        <div class="field-chip">
-          <strong>${title}</strong>
-          <span>${text}</span>
-        </div>
-      `).join("")}
+  `;
+}
+
+function renderQuarterlyReport() {
+  const model = state.quarterlyTab === "kpi"
+    ? getQuarterlyKpiModel(state.quarterlyFilters)
+    : getQuarterlyMilestoneModel(state.quarterlyFilters);
+  if (state.quarterlyTab === "kpi") {
+    const exportModel = buildCurrentQuarterExport(model, state.selectedQuarterlyMetricId);
+    setCurrentExport(exportModel.title, exportModel.columns, exportModel.rows);
+  } else {
+    setCurrentExport("WMS季度報表_專案里程碑", ["影響KPI", "專案", "倉別", "責任單位", "交付進度", "成效驗證"], model.groups.flatMap((group) => group.projects.map((project) => [group.metricName, project.projectName, project.warehouseCodes.join("／"), project.ownerUnit, project.deliveryProgressLabel, project.effectStatus])));
+  }
+  return `
+    ${pageHeader("WMS季度報表", "", "報表中心", "quarter")}
+    <section class="quarter-tabs" aria-label="季度報表頁籤">
+      <button type="button" class="quarter-tab ${state.quarterlyTab === "kpi" ? "is-active" : ""}" data-quarter-tab="kpi">營運 KPI</button>
+      <button type="button" class="quarter-tab ${state.quarterlyTab === "milestones" ? "is-active" : ""}" data-quarter-tab="milestones">專案里程碑</button>
     </section>
+    ${renderQuarterlyFilters(state.quarterlyFilters, warehouses)}
+    ${state.quarterlyTab === "kpi"
+      ? renderQuarterlyKpiTab(model, { selectedMetricId: state.selectedQuarterlyMetricId, granularity: state.quarterlyGranularity, selectedPoint: state.selectedQuarterlyPoint })
+      : renderQuarterlyMilestoneTab({ ...model, weeks: getQuarterlyKpiModel(state.quarterlyFilters).weeks })}
+  `;
+}
+
+function renderDailyReportCenterPage() {
+  const model = getDailyReportCenterModel(state.dailyReportFilters);
+  state.reportCenterWorkbook = {
+    title: `大樹WMS_Daily_${state.dailyReportFilters.businessDate}_${state.dailyReportFilters.warehouseCode}`,
+    sheets: buildDailyExportSheets(model)
+  };
+  return `
+    ${pageHeader("Daily報表中心", "", "報表中心", "report-center")}
+    ${renderDailyReportCenter(model)}
+  `;
+}
+
+function renderMonthlyReportPage() {
+  const model = getMonthlyReportModel(state.monthlyReportFilters);
+  state.reportCenterWorkbook = {
+    title: `大樹WMS_全倉月報_${state.monthlyReportFilters.yearMonth}_${state.monthlyReportFilters.warehouseCode}`,
+    sheets: buildMonthlyExportSheets(model)
+  };
+  return `
+    ${pageHeader("全倉月報表", "", "報表中心", "report-center")}
+    ${renderMonthlyReport(model, state.monthlyUi)}
+  `;
+}
+
+function renderKeyNumbersPage() {
+  const model = getKeyNumbersModel(state.keyNumberFilters);
+  const expenseModel = getExpenseHierarchyModel({
+    yearMonth: state.keyNumberFilters.yearMonth,
+    warehouseCode: state.keyNumberFilters.warehouseCode,
+    categoryId: state.keyNumberUi.selectedExpenseCategory,
+    accountName: state.keyNumberUi.selectedAccountName,
+    expenseItem: state.keyNumberUi.selectedExpenseItem
+  });
+  state.reportCenterWorkbook = {
+    title: `大樹WMS_營運關鍵數字_${state.keyNumberFilters.yearMonth}_${state.keyNumberFilters.warehouseCode}`,
+    sheets: buildKeyNumbersExportSheets(model, getExpenseHierarchyModel({
+      yearMonth: state.keyNumberFilters.yearMonth,
+      warehouseCode: state.keyNumberFilters.warehouseCode,
+      categoryId: "",
+      accountName: "",
+      expenseItem: ""
+    }))
+  };
+
+  let detail = "";
+  if (state.keyNumberUi.selectedMetricId) {
+    const metric = getMetricDrilldownModel(
+      state.keyNumberFilters,
+      state.keyNumberUi.selectedMetricId
+    );
+    if (metric) {
+      metric.notes = [
+        ...metric.notes,
+        ...state.operationalNotes.filter(
+          (note) =>
+            note.entityType === "metric" &&
+            note.entityId === metric.metricId
+        )
+      ];
+    }
+    detail = renderMetricDrilldown(metric);
+  } else if (
+    state.keyNumberUi.selectedDimension === "成本費用／人效" &&
+    state.keyNumberUi.expenseLevel !== "summary"
+  ) {
+    detail = renderExpenseHierarchy(expenseModel, state.keyNumberUi);
+  }
+
+  return `
+    ${pageHeader("營運關鍵數字", "", "報表中心", "report-center")}
+    ${renderKeyNumbers(model, state.keyNumberUi)}
+    ${detail}
   `;
 }
 
@@ -805,63 +931,49 @@ function renderHomeSubview() {
   }
 
   if (view === "P1待處理") {
-    const columns = ["優先級", "倉別", "來源報表", "問題類別", "案件數", "核心KPI", "責任單位", "SLA", "下鑽"];
-    const rows = [
-      ["P1", "WH03", "新屋西藥倉_報表｜每日", "效期/GDP", "2件", "980 PCS", "採購/GDP窗口", "4h", "供應商→SKU→批號"],
-      ["P1", "WH05", "02電商_報表｜每日", "出貨履約", "3件", "68 有庫未出", "包裝/出貨組", "2h", "訂單→SKU→箱號"],
-      ["P1", "WH06", "高邊退貨_報表｜每日", "退貨處置", "2件", "24筆", "退貨/管理課", "1日", "清冊→SKU→退貨單"],
-      ["P1", "WH07", "帳務及庶務倉_報表｜每日", "帳務/TMS", "1件", "3筆", "資訊/帳務", "4h", "車次→單據→錯誤碼"]
-    ];
-    const categories = [
-      { id: "gdp", icon: "shield-check", label: "效期/GDP", count: "2件", warehouse: "WH03", issue: "進貨效期低於庫內", owner: "採購/GDP窗口", sla: "4h", drilldown: "供應商→SKU→批號", tone: "warning" },
-      { id: "outbound", icon: "truck", label: "出貨履約", count: "3件", warehouse: "WH05", issue: "EXSD Miss / Backlog", owner: "包裝/出貨組", sla: "2h", drilldown: "訂單→SKU→箱號", tone: "danger" },
-      { id: "returns", icon: "package-search", label: "退貨處置", count: "2件", warehouse: "WH06", issue: "不可退廠清冊未結", owner: "退貨/管理課", sla: "1日", drilldown: "清冊→SKU→退貨單", tone: "warning" },
-      { id: "accounting", icon: "receipt-text", label: "帳務/TMS", count: "1件", warehouse: "WH07", issue: "TMS派車與未拋帳", owner: "資訊/帳務", sla: "4h", drilldown: "車次→單據→錯誤碼", tone: "warning" }
-    ];
-    setCurrentExport("Home_P1待處理", columns, rows);
+    const profile = getP1ReportProfile(state.warehouse.code, state.reportFilters.businessDate);
+    setCurrentExport("Home_P1待處理", profile.columns, profile.rows);
     return `
-      ${pageHeader("P1待處理", "只放今天必須升級處理的跨倉風險，避免主管被一般明細淹沒。", "Home")}
+      ${pageHeader("P1待處理", "", "Home")}
+      ${renderColumnPanel(profile.columns)}
+      <section class="kpi-grid">
+        ${profile.kpis.map(([label, value, note]) => kpi(label, value, note, "circle-alert")).join("")}
+      </section>
+      ${renderTable(profile.columns, profile.rows)}
+    `;
+  }
+
+  if (view === "需求追蹤") {
+    const dataStatus = getWarehouseDataStatus(state.warehouse.code);
+    const columns = ["倉別", "需求狀態", "資料來源", "處理原則"];
+    const rows = [[
+      state.warehouse.code,
+      status(dataStatus, dataStatus === "原型資料" ? "ok" : "warn"),
+      dataStatus === "待確認" ? "待主管／會議確認" : "既有書面規格與窗口明確回覆",
+      dataStatus === "待確認" ? "不補造、不列入正式數字" : "依已確認規格執行"
+    ]];
+    setCurrentExport("Home_需求追蹤", columns, rows);
+    return `
+      ${pageHeader("需求追蹤", "把各倉更新、RETURN二次確認、P1欄位缺口集中管理，替代原本的廠商會議板。", "Home")}
       ${renderColumnPanel(columns)}
-      <section class="p1-reconciliation">
-        <strong>P1未結案件 <b>8件</b></strong>
-        <span>共4類｜分類合計 2＋3＋2＋1＝8件</span>
-        <em>SLA逾時 2件</em>
+      <section class="kpi-grid">
+        ${kpi("本倉資料狀態", dataStatus, dataStatus === "待確認" ? "不補造需求" : "依已確認規格", "file-question")}
       </section>
-      <section class="p1-category-grid">
-        ${categories.map((category) => `
-          <button type="button" class="p1-category-card ${category.tone} ${state.expandedP1Category === category.id ? "is-expanded" : ""}" data-p1-category="${category.id}" aria-expanded="${state.expandedP1Category === category.id}">
-            <i data-lucide="${category.icon}"></i>
-            <span>${category.label}<small>${category.warehouse}</small></span>
-            <strong>${category.count}</strong>
-            <em>${category.issue}</em>
-            <b>責任：${category.owner}</b>
-            <small>SLA ${category.sla}</small>
-          </button>
-        `).join("")}
-      </section>
-      ${categories.map((category) => `
-        <section class="p1-case-detail" data-p1-detail="${category.id}" ${state.expandedP1Category === category.id ? "" : "hidden"}>
-          <div><span>倉別</span><strong>${category.warehouse}</strong></div>
-          <div><span>目前問題</span><strong>${category.issue}</strong></div>
-          <div><span>責任單位</span><strong>${category.owner}</strong></div>
-          <div><span>處理時限</span><strong>${category.sla}</strong></div>
-          <div class="p1-drilldown-path"><span>回查路徑</span><strong>${category.drilldown}</strong></div>
-        </section>
-      `).join("")}
+      ${renderTable(columns, rows)}
     `;
   }
 
   if (view === "各倉狀態") {
-    setCurrentExport("Home_各倉狀態", ["倉別", "今日狀態", "主要異常", "未結件數", "更新時間"], warehouses.map((warehouse) => [
+    setCurrentExport("Home_各倉狀態", ["倉別", "倉名", "職能", "今日必看", "風險", "看板入口"], warehouses.map((warehouse) => [
       warehouse.code,
-      warehouse.code === "WH05" || warehouse.code === "WH06" ? "需處理" : "需追蹤",
+      warehouse.name,
+      warehouse.type,
+      warehouse.focus,
       dashboardRanking.find((row) => row.code === warehouse.code)?.risk || "正常",
-      dashboardRanking.find((row) => row.code === warehouse.code)?.exceptions || 0,
-      "2026-07-14 14:00"
+      "Dashboard / " + warehouse.type
     ]));
     return `
-      ${pageHeader("各倉狀態", "主管跨倉異常摘要；卡片只保留今日狀態、主要異常、未結件數與更新時間，點倉別後進入該倉工作台。", "Home")}
-      ${renderDataQualityBanner()}
+      ${pageHeader("各倉狀態", "倉別切換不是只換名稱，必須連動該倉每日必看報表、欄位、風險與下鑽入口。", "Home")}
       ${renderColumnPanel(state.currentExport.columns)}
       <section class="warehouse-status-grid">
         ${warehouses.map((warehouse) => {
@@ -869,9 +981,9 @@ function renderHomeSubview() {
           return `
             <article class="warehouse-card ${warehouse.code === state.warehouse.code ? "is-active" : ""}">
               <strong>${warehouse.code} ${warehouse.name}</strong>
-              <span>今日狀態：${warehouse.code === "WH05" || warehouse.code === "WH06" ? "需處理" : "需追蹤"}</span>
-              <p>主要異常：${rank?.risk || "正常"}</p>
-              <small>未結件數：${rank?.exceptions || 0}｜更新：2026-07-14 14:00</small>
+              <span>${warehouse.type}</span>
+              <p>${warehouse.focus}</p>
+              <small>主要風險：${rank?.risk || "正常"}</small>
             </article>
           `;
         }).join("")}
@@ -879,334 +991,33 @@ function renderHomeSubview() {
     `;
   }
 
-  setCurrentExport("Home_今日工作台", ["項目", "數值", "來源", "處理方向"], [
-    ["今日應出PCS", "15,033", "Daily各倉產能統計", "看出貨完成率與有庫未出"],
-    ["待驗/待上架", "2,140", "進貨/驗收/上架Log", "看入庫健康與庫存可用"],
-    ["P1未結異常", "8", "異常Log", "看責任單位與SLA"],
-    ["成本趨勢", "+6.2%", "報工/TMS/費用表", "看OT、委外、配送、包材"]
-  ]);
+  const profile = getWarehouseHomeProfile(state.warehouse.code, state.reportFilters.businessDate);
+  setCurrentExport(`Home_${profile.title}`, profile.columns, profile.rows);
   return `
-    ${pageHeader("今日工作台", "主管一進WMS先看今天要處理什麼、哪個倉卡住、哪個異常需要升級。", "Home")}
-    ${renderColumnPanel(state.currentExport.columns)}
+    ${pageHeader(profile.title, "", "Home")}
+    ${renderColumnPanel(profile.columns)}
     <section class="kpi-grid">
-      ${kpi("今日應出PCS", "15,033", "出貨大報表 / 訂單應出PCS", "truck")}
-      ${kpi("出貨完成率", "97.5%", "低於98%需追蹤", "gauge")}
-      ${kpi("待驗 / 待上架", "2,140", "接收與GDP共同追蹤", "package-check")}
-      ${kpi("P1未結異常", "8", "SLA逾時2件", "circle-alert")}
+      ${profile.kpis.map(([label, value, note]) => kpi(label, value, note, "warehouse")).join("")}
     </section>
-    <section class="dashboard-grid">
-      <div class="panel">
-        <h3>今日作業健康度</h3>
-        <div class="flow-list">
-          ${flow("進貨接收", 74, "待上架 1,100")}
-          ${flow("驗收QC", 61, "短效 2 件")}
-          ${flow("揀貨下架", 82, "有庫未出 68")}
-          ${flow("裝箱交接", 57, "車次等待 3")}
-          ${flow("異常結案", 69, "未結 8")}
-        </div>
-      </div>
-      <div class="panel">
-        <h3>每日必看風險</h3>
-        <div class="risk-list">
-          ${risk("danger", "GDP進貨短效", "WH03 藥品A 980PCS 待採購允收")}
-          ${risk("warn", "有庫未出", "WH05 包裝站等待 28PCS")}
-          ${risk("warn", "不可退廠清冊", "WH06 待報廢120PCS")}
-          ${risk("warn", "TMS派車", "WH07 派車已拋、簽收未回")}
-        </div>
-      </div>
-      <div class="panel">
-        <h3>各倉出貨完成率</h3>
-        <div class="mini-bars">
-          ${dashboardRanking.slice(0, 6).map((row) => bar(row.code, row.complete, `${row.complete}%`)).join("")}
-        </div>
-      </div>
-    </section>
+    ${renderReportToolbar()}
+    ${renderTable(profile.columns, profile.rows)}
   `;
 }
 
 function renderDashboardView() {
   const child = state.activeChild;
-  const dashboardText = {
-    "全倉營運達標總覽": "跨倉判斷是否達標、卡在哪個節點及應由誰處理。",
-    "入庫作業健康": "聚焦同母集合應到至上架的停留時間、瓶頸與責任節點。",
-    "出貨履約監控": "聚焦承諾時限、出貨節點、待發貨預警與人力缺口。",
-    "庫存健康與可用性": "聚焦互斥庫存狀態、庫齡、效期、容量及帳實差異。",
-    "人效與稼動管理": "聚焦標準工時加權達成率、報工完整率、工時分布與編制。",
-    "異常責任與閉環": "聚焦未結、SLA、已確認根因、責任、改善證據與複核。",
-    "營運成本與單位成本": "聚焦總成本、單位成本、差異來源及分攤規則版本。"
-  }[child];
-  if (child === "全倉營運達標總覽") {
-    return renderExecutiveDashboard();
-  }
-  const columns = ["排名", "倉別", "出貨完成率", "入庫健康", "庫存健康", "異常件數", "成本指標", "主要風險"];
-  const rows = dashboardRanking.map((row, index) => [
-    index + 1,
-    `${row.code} ${row.name}`,
-    `${row.complete}%`,
-    `${row.inbound}%`,
-    `${row.inventory}%`,
-    row.exceptions,
-    `${row.cost}%`,
-    row.risk
-  ]);
-  if (child !== "全倉營運達標總覽") {
-    return renderFocusedDashboard(child, dashboardText);
-  }
+  const definition = getDashboardDefinition(child);
+  if (!definition) return pageHeader("看板資料不足", "此看板未納入04_看板總表正式定義，不顯示推測數字。", "Dashboard");
+  const model = getDashboardModel(child, state.warehouse.code);
+  const columns = ["看板", "圖表", "倉別", "資料點", "數值", "狀況", "營運影響", "責任節點", "責任單位", "處理時效", "回查路徑", "資料期間", "更新時間", "公式版本"];
+  const rows = model.charts.flatMap((chart) => chart.points.map((point) => [model.name, chart.title, point.warehouseCode, point.label, point.valueLabel, point.cause, point.impact, point.ownerNode, point.owner, point.sla, point.drilldown, model.period, model.updatedAt, model.formulaVersion]));
   setCurrentExport(`Dashboard_${child}`, columns, rows);
   return `
     <section class="dark-dashboard">
-      ${pageHeader(`${child} Dashboard`, `${dashboardText} 來源一路由各倉每日必看報表、Daily統計*各倉產能*整合模板彙總到04_看板總表。`, "Dashboard")}
-      ${renderDataQualityBanner({ period: "示意期間", updatedAt: "尚未介接正式來源", completeness: "資料不足" })}
-      ${renderColumnPanel(columns)}
-      <div class="dark-kpis">
-        <div class="dark-kpi"><span>今日出貨完成</span><strong>14,654 PCS</strong></div>
-        <div class="dark-kpi"><span>全倉完成率</span><strong>97.5%</strong></div>
-        <div class="dark-kpi"><span>庫存健康風險</span><strong>1,060 PCS</strong></div>
-        <div class="dark-kpi"><span>P1未結異常</span><strong>8 件</strong></div>
-      </div>
-      <div class="dark-grid">
-        <div class="dark-panel wide">
-          <h3>全倉比較排名</h3>
-          ${renderWarehouseComparison("", dashboardRanking)}
-        </div>
-        <div class="dark-panel">
-          <h3>庫存狀態占比</h3>
-          <div class="donut"></div>
-          <div class="legend-row"><span>可用</span><span>暫用</span><span>已揀</span><span>不可用</span></div>
-        </div>
-        <div class="dark-panel">
-          <h3>入庫健康漏斗</h3>
-          <div class="flow-list">
-            ${flow("應到", 100, "3,020")}
-            ${flow("已收", 95, "2,880")}
-            ${flow("已驗", 88, "2,660")}
-            ${flow("已上架", 45, "1,360")}
-          </div>
-        </div>
-        <div class="dark-panel">
-          <h3>異常閉環</h3>
-          <div class="risk-list">
-            ${risk("danger", "SLA逾時", "2件")}
-            ${risk("warn", "責任未定", "3件")}
-            ${risk("warn", "重複異常", "4件")}
-            ${risk("ok", "今日結案", "11件")}
-          </div>
-        </div>
-        <div class="dark-panel">
-          <h3>成本趨勢</h3>
-          <div class="mini-bars">
-            ${bar("人力", 72, "+3%")}
-            ${bar("OT", 84, "+9%")}
-            ${bar("委外", 48, "-2%")}
-            ${bar("配送", 66, "+6%")}
-            ${bar("包材", 58, "+4%")}
-          </div>
-        </div>
-      </div>
+      ${pageHeader(child, definition.managementQuestion, "Dashboard／04_看板總表")}
+      ${renderDashboardCharts(model, state.dashboardSelection)}
     </section>
   `;
-}
-
-function renderExecutiveDashboard() {
-  const warehouseAchievement = [
-    { code: "WH05", name: "大園新倉電商倉", labor: 86, reporting: 96, utilization: 108, shipment: 91, misses: 3, status: "danger" },
-    { code: "WH06", name: "高邊退貨倉", labor: 89, reporting: 92, utilization: 103, shipment: null, misses: 2, status: "danger" },
-    { code: "WH03", name: "新屋西藥倉", labor: 94, reporting: 99, utilization: 98, shipment: 97.7, misses: 1, status: "warning" },
-    { code: "WH08", name: "後送中心倉", labor: 96, reporting: 98, utilization: 95, shipment: 93.4, misses: 1, status: "warning" },
-    { code: "WH01", name: "大豐一般倉", labor: 101, reporting: 100, utilization: 91, shipment: 98.2, misses: 0, status: "normal" },
-    { code: "WH02", name: "大豐採品倉", labor: 98, reporting: 97, utilization: 90, shipment: 94.8, misses: 1, status: "warning" },
-    { code: "WH04", name: "內壢成章倉", labor: 103, reporting: 99, utilization: 88, shipment: 99.7, misses: 0, status: "normal" },
-    { code: "WH07", name: "帳務及庶務倉", labor: null, reporting: 76, utilization: null, shipment: null, misses: null, status: "insufficient" }
-  ];
-  const selected = warehouseAchievement.find((item) => item.code === state.warehouse.code) || warehouseAchievement[0];
-  const columns = ["倉別", "標準工時加權達成率", "報工完整率", "人力使用率", "承諾時限內出貨率", "未達標作業數", "判斷"];
-  const rows = warehouseAchievement.map((item) => [item.code, displayRate(item.labor), displayRate(item.reporting), displayRate(item.utilization), displayRate(item.shipment), item.misses ?? "資料不足", dashboardStatusLabel(item.status)]);
-  setCurrentExport("Dashboard_全倉營運達標總覽", columns, rows);
-  return `
-    <section class="dark-dashboard accountable-dashboard">
-      ${pageHeader("全倉營運達標總覽", "", "Dashboard")}
-      ${renderDataQualityBanner({ period: "2026-07-09 原型假資料", updatedAt: "原型資料", completeness: "公式版本 2026-07-15-dashboard-v2" })}
-      <div class="achievement-layout">
-        <section class="dark-panel warehouse-achievement-list">
-          <div class="panel-heading"><h3>各倉達標總覽</h3><span>未達標且即將逾時優先；資料不足不排名</span></div>
-          <div class="achievement-header"><span>倉別</span><span>標準工時加權達成率</span><span>報工完整率</span><span>人力使用率</span><span>承諾時限內出貨率</span><span>未達標</span></div>
-          ${warehouseAchievement.map(renderWarehouseAchievementRow).join("")}
-        </section>
-        <section class="dark-panel selected-warehouse-fulfillment">
-          <div class="panel-heading"><h3>${selected.code} 出貨履約監控</h3><span>承諾規則：${selected.code === "WH05" ? "訂單建立後24小時" : "依倉別截單／班次"}</span></div>
-          ${renderOutboundFulfillment(selected)}
-        </section>
-      </div>
-      ${renderShippingLaborWarnings()}
-      ${renderTable(columns, rows)}
-    </section>
-  `;
-}
-
-function renderWarehouseAchievementRow(item) {
-  return `<button type="button" class="achievement-row ${item.status}" data-dashboard-drilldown data-warehouse="${item.code}" data-flow="achievement" data-status="${item.status}" data-formula-version="2026-07-15-dashboard-v2">
-    <strong>${item.code}<small>${item.name}</small></strong>
-    <span>${displayRate(item.labor)}</span><span>${displayRate(item.reporting)}</span><span>${displayRate(item.utilization)}</span><span>${displayRate(item.shipment)}</span>
-    <b>${item.misses ?? "資料不足"}<small>${dashboardStatusLabel(item.status)}</small></b>
-  </button>`;
-}
-
-function renderOutboundFulfillment(item) {
-  const stages = [
-    ["待分配", 36, "420 PCS", "0:22"], ["待揀貨", 42, "680 PCS", "0:41"], ["揀貨中", 28, "510 PCS", "0:35"],
-    ["待覆核", 19, "260 PCS", "0:28"], ["待包裝", 31, "380 PCS", "1:12"], ["待出貨", 24, "320 PCS", "0:53"], ["已出貨", 186, "3,940 PCS", "-"]
-  ];
-  return `<div class="fulfillment-flow">${stages.map(([label, orders, pcs, age], index) => `<button type="button" class="fulfillment-stage ${index === 4 ? "warning" : ""}" data-dashboard-drilldown data-warehouse="${item.code}" data-flow="outbound" data-status="${label}" data-formula-version="2026-07-15-dashboard-v2"><span>${label}</span><strong>${orders}單</strong><small>${pcs}</small><em>最老等待時間 ${age}</em></button>`).join("")}</div>`;
-}
-
-function renderShippingLaborWarnings() {
-  return `<section class="dark-panel shipping-labor-warning"><div class="panel-heading"><h3>待發貨與人力預警</h3><span>剩餘工作量依標準人效換算需求人力</span></div>
-    <div class="warning-grid">
-      <button type="button" class="warning-case danger" data-dashboard-drilldown data-warehouse="WH05" data-flow="outbound" data-status="即將逾時"><strong>WH05｜包裝即將逾時</strong><span>28單／380 PCS｜最老等待1:12</span><small>投入5人｜需求8人｜缺口3人｜責任：包裝組</small></button>
-      <button type="button" class="warning-case warning" data-dashboard-drilldown data-warehouse="WH03" data-flow="outbound" data-status="待放行"><strong>WH03｜GDP待放行</strong><span>9單／980 PCS｜承諾班次16:00</span><small>效期允收未完成｜責任：GDP／採購</small></button>
-      <button type="button" class="warning-case insufficient" data-dashboard-drilldown data-warehouse="WH07" data-flow="outbound" data-status="資料不足"><strong>WH07｜履約資料不足</strong><span>承諾規則未介接</span><small>不計入全倉排名</small></button>
-    </div></section>`;
-}
-
-function displayRate(value) {
-  return value === null || value === undefined ? "資料不足" : `${value}%`;
-}
-
-function dashboardStatusLabel(statusType) {
-  return { normal: "達標", warning: "注意", danger: "未達標", insufficient: "資料不足" }[statusType] || "資料不足";
-}
-
-function executiveMetric(label, value, formula, statusType) {
-  return `<div class="executive-metric ${statusType}"><span>${label}</span><strong>${value}</strong><small>${formula}</small></div>`;
-}
-
-function executiveRisk(warehouse, cause, impact, owner, sla, level) {
-  return `<div class="executive-risk ${level}"><strong>${warehouse}｜${cause}</strong><b>${impact}</b><small>責任：${owner}｜${sla}</small></div>`;
-}
-
-function renderRiskHeatmap() {
-  const heatmapRows = [
-    ["WH01", "98.2%", "正常", "有庫未出18", "2", "未介接"],
-    ["WH03", "97.7%", "效期允收", "鎖庫980", "5", "未介接"],
-    ["WH05", "91.0%", "待上架", "有庫未出", "8", "未介接"],
-    ["WH06", "不適用", "退貨收貨", "處置未結", "9", "未介接"],
-    ["WH07", "不適用", "不適用", "帳實差異", "6", "未拋帳"]
-  ];
-  const cellClass = (value) => /91\.0|效期|處置|未拋帳|^8$|^9$/.test(value) ? "danger" : /未出|待上架|鎖庫|差異|^5$|^6$/.test(value) ? "warn" : /不適用|未介接/.test(value) ? "na" : "normal";
-  return `<div class="heatmap-grid"><b></b><b>出貨</b><b>入庫</b><b>庫存</b><b>異常</b><b>成本</b>${heatmapRows.map((row) => `<b>${row[0]}</b>${row.slice(1).map((value) => `<button type="button" class="heatmap-cell ${cellClass(value)}">${value}</button>`).join("")}`).join("")}</div>`;
-}
-
-function renderFocusedDashboard(child, dashboardText) {
-  if (child === "入庫作業健康") return renderInboundHealthDashboard(dashboardText);
-  if (child === "庫存健康與可用性") return renderInventoryHealthDashboard(dashboardText);
-  if (child === "人效與稼動管理") return renderLaborDashboard(dashboardText);
-  if (child === "異常責任與閉環") return renderExceptionDashboard(dashboardText);
-  if (child === "營運成本與單位成本") return renderCostDashboard(dashboardText);
-  const configs = {
-    "入庫作業健康": {
-      kpis: [["應到", "3,020 PCS"], ["實到", "2,880 PCS"], ["待驗收", "220 PCS"], ["待上架", "1,300 PCS"]],
-      panels: [["同母集合入庫漏斗", "應到 → 實到 → 卸貨 → 驗收 → QC → 已上架"], ["節點處理時間", "中位數、P90 與 SLA 目標線"], ["逾時原因 Pareto", "卸貨等待、QC等待、儲位不足、資料缺漏"]],
-      columns: ["倉別", "ASN / 採購單", "收貨單", "供應商", "目前節點", "待處理PCS", "停留時間", "責任單位"]
-    },
-    "出貨履約監控": {
-      kpis: [["承諾時限內出貨率", "97.5%"], ["即將逾時", "28單"], ["已逾時", "2單"], ["人力缺口", "3人"]],
-      panels: [["履約節點", "待分配、待揀貨、揀貨中、待覆核、待包裝、待出貨、已出貨"], ["待發貨預警", "依各倉承諾截止時間，而非全倉固定24小時"], ["人力需求", "剩餘工作量依標準人效換算需求人力"]],
-      columns: ["倉別", "訂單", "承諾截止", "目前節點", "PCS", "最老等待時間", "責任組", "預警狀態"]
-    },
-    "庫存健康與可用性": {
-      kpis: [["可用", "12,480 PCS"], ["鎖庫", "1,060 PCS"], ["90天未異動", "680 PCS"], ["滿載儲位", "24格"]],
-      panels: [["互斥庫存狀態", "可用、暫用、已揀、不可用、鎖庫、隔離、待報廢"], ["庫齡與效期分布", "0–30、31–60、61–90、90天以上"], ["儲位容量熱區", "容量母體、已用與不可用儲格分開計算"]],
-      columns: ["倉別", "SKU", "批號 / 效期", "LPN", "儲位", "庫存狀態", "PCS", "庫齡", "風險"]
-    },
-    "人效與稼動管理": {
-      kpis: [["加權達成率", "75.0%"], ["報工完整率", "93.8%"], ["人力使用率", "88.0%"], ["未達標作業", "3項"]],
-      panels: [["標準工時加權達成率", "標準工時合計 ÷ 實際作業工時"], ["報工完整率", "已報作業工時 ÷ 應報工時，獨立顯示"], ["編制評估", "大於100%編制不足；80%至100%合理；低於80%需連同報工品質判讀"]],
-      columns: ["日期", "倉別", "作業類型", "完成量", "標準人效", "標準工時", "實際工時", "達成率", "報工完整率"]
-    },
-    "異常責任與閉環": {
-      kpis: [["未結案", "18件"], ["SLA逾時", "2件"], ["根因未確認", "6件"], ["今日結案", "11件"]],
-      panels: [["案件 Aging", "0–2h、2–4h、4–8h、8h以上"], ["原因 Pareto", "異常現象與已確認根因分開"], ["責任與閉環", "改善證據、複核人與結案時間缺一不可"]],
-      columns: ["異常單", "倉別", "來源模組", "分級", "SLA", "已確認根因", "責任單位", "改善證據", "結案狀態"]
-    },
-    "營運成本與單位成本": {
-      kpis: [["總成本", "資料不足"], ["每單成本", "資料不足"], ["每PCS成本", "資料不足"], ["OT成本", "資料不足"]],
-      panels: [["成本趨勢", "正式費用來源未介接，不繪製趨勢圖"], ["成本差異拆解", "人力、OT、委外、配送、包材、異常成本"], ["分攤規則版本", "無分攤規則與母數時禁止跨倉排名"]],
-      columns: ["日期", "倉別", "成本類型", "金額", "訂單母數", "PCS母數", "分攤規則版本", "資料狀態"]
-    }
-  };
-  const config = configs[child];
-  const gate = DASHU_WMS.dashboardQualityGate({ requiredFields: ["date", "warehouseCode"], record: { date: "2026-07-14" }, denominator: 1, updated: true });
-  const rows = [["資料不足", state.warehouse.code, "尚未介接正式來源", "-", "-", "-", "-", gate.reason]];
-  setCurrentExport(`Dashboard_${child}`, config.columns, rows);
-  return `
-    <section class="dark-dashboard">
-      ${pageHeader(`${child} Dashboard`, dashboardText, "Dashboard")}
-      ${renderDataQualityBanner({ period: "尚未介接", updatedAt: "未更新", completeness: "資料不足" })}
-      <div class="dark-kpis">${config.kpis.map(([label, value]) => `<div class="dark-kpi"><span>${label}</span><strong>${value}</strong><small>原型假資料｜待正式對帳</small></div>`).join("")}</div>
-      <div class="dark-grid">${config.panels.map(([title, text]) => `<div class="dark-panel"><h3>${title}</h3><p>${text}</p><div class="insufficient-state">${gate.canRender ? "可呈現" : `資料不足：${gate.reason}`}</div></div>`).join("")}</div>
-      ${renderTable(config.columns, rows)}
-    </section>
-  `;
-}
-
-function renderInboundHealthDashboard(dashboardText) {
-  const gdpFields = state.warehouse.code === "WH03";
-  const stages = [["應到", "3,020 PCS"], ["實到", "2,880 PCS"], ["卸貨", "2,760 PCS"], ["驗收", "2,660 PCS"], ["QC", "2,540 PCS"], ["待上架", "1,300 PCS"], ["已上架", "1,240 PCS"]];
-  const columns = ["倉別", "ASN", "收貨單", "供應商", "目前節點", "待處理PCS", "停留時間", ...(gdpFields ? ["批號", "效期", "庫內最短效期", "GDP允收"] : []), "責任單位"];
-  const rows = [[state.warehouse.code, "資料不足", "資料不足", "尚未介接", "-", "-", "-", ...(gdpFields ? ["-", "-", "-", "資料不足"] : []), "-"]];
-  setCurrentExport("Dashboard_入庫作業健康", columns, rows);
-  return `<section class="dark-dashboard accountable-dashboard">
-    ${pageHeader("入庫作業健康", dashboardText, "Dashboard")}
-    ${renderDataQualityBanner({ period: "2026-07-09 原型假資料", updatedAt: "原型資料", completeness: "同母集合示意；正式來源未介接" })}
-    <section class="dark-panel"><div class="panel-heading"><h3>同母集合入庫漏斗</h3><span>母集合：當期應到 ASN／收貨單</span></div><div class="process-funnel">${stages.map(([label, value], index) => `<button type="button" data-dashboard-drilldown data-warehouse="${state.warehouse.code}" data-flow="inbound" data-status="${label}" style="--stage-width:${100 - index * 8}%"><strong>${label}</strong><span>${value}</span></button>`).join("")}</div></section>
-    ${gdpFields ? `<section class="gdp-rule-strip"><strong>WH03 GDP允收</strong><span>批號＋效期＋庫內最短效期比對；不符合不得上架</span></section>` : ""}
-    <div class="dashboard-specific-grid"><section class="dark-panel"><h3>停留時間分布</h3><p>卸貨、驗收、QC與上架分別顯示中位數、P90及SLA目標線。</p><div class="insufficient-state">正式事件時間尚未介接</div></section><section class="dark-panel"><h3>逾時原因 Pareto</h3><p>卸貨等待、文件缺漏、QC等待、儲位不足；只採已確認原因碼。</p><div class="insufficient-state">正式原因碼尚未介接</div></section><section class="dark-panel"><h3>待上架責任清單</h3><p>顯示ASN、SKU、PCS、目前節點、最老等待時間與責任單位。</p><div class="insufficient-state">正式責任節點尚未介接</div></section></div>
-    ${renderTable(columns, rows)}
-  </section>`;
-}
-
-function renderInventoryHealthDashboard(dashboardText) {
-  const states = [["可用", "12,480 PCS", "normal"], ["暫用", "630 PCS", "warning"], ["已揀", "1,240 PCS", "normal"], ["不可用", "210 PCS", "danger"], ["鎖庫", "980 PCS", "danger"], ["隔離", "80 PCS", "danger"], ["待報廢", "140 PCS", "warning"]];
-  const columns = ["倉別", "SKU ID", "批號", "效期", "LPN", "儲位", "互斥庫存狀態", "PCS", "庫齡", "容量風險", "最後PDA事件"];
-  const rows = [[state.warehouse.code, "資料不足", "-", "-", "-", "-", "資料不足", "-", "-", "-", "-"]];
-  setCurrentExport("Dashboard_庫存健康與可用性", columns, rows);
-  return `<section class="dark-dashboard accountable-dashboard">
-    ${pageHeader("庫存健康與可用性", dashboardText, "Dashboard")}
-    ${renderDataQualityBanner({ period: "2026-07-09 原型假資料", updatedAt: "原型資料", completeness: "狀態互斥示意；正式快照未介接" })}
-    <section class="dark-panel"><div class="panel-heading"><h3>庫存狀態互斥總覽</h3><span>同一庫存單位只能歸屬一種狀態</span></div><div class="inventory-state-grid">${states.map(([label, value, statusType]) => `<button type="button" class="inventory-state ${statusType}" data-dashboard-drilldown data-warehouse="${state.warehouse.code}" data-flow="inventory" data-status="${label}"><span>${label}</span><strong>${value}</strong></button>`).join("")}</div></section>
-    <div class="dashboard-specific-grid"><section class="dark-panel"><h3>庫齡與效期</h3><p>0–30、31–60、61–90、90天以上；WH03另依批號效期下鑽。</p><div class="insufficient-state">正式庫存快照尚未介接</div></section><section class="dark-panel"><h3>容量風險</h3><p>庫區容量母數、已用儲格與不可用儲格分開計算。</p><div class="insufficient-state">容量母數尚未介接</div></section><section class="dark-panel"><h3>帳實差異與有庫未出</h3><p>回查SKU ID、LPN、儲位與最後PDA事件，不以差異總數代替原因。</p><div class="insufficient-state">盤點與訂單明細尚未介接</div></section></div>
-    ${renderTable(columns, rows)}
-  </section>`;
-}
-
-function renderLaborDashboard(dashboardText) {
-  const activities = [["電商揀貨", 94, "注意"], ["電商覆核", 108, "達標"], ["電商包裝", 82, "未達標"], ["入庫上架", 76, "未達標"], ["排車上貨", 101, "達標"]];
-  const columns = ["日期", "倉別", "作業類型", "完成量", "標準人效", "標準工時", "實際作業工時", "加權達成率", "報工完整率", "人力使用率"];
-  const rows = [["2026-07-09", state.warehouse.code, "原型假資料", "-", "-", "-", "-", "資料不足", "資料不足", "資料不足"]];
-  setCurrentExport("Dashboard_人效與稼動管理", columns, rows);
-  return `<section class="dark-dashboard accountable-dashboard">${pageHeader("人效與稼動管理", dashboardText, "Dashboard")}${renderDataQualityBanner({ period: "2026-07-09 原型假資料", updatedAt: "原型資料", completeness: "報工資料尚未正式介接" })}
-    <div class="executive-kpi-grid">${executiveMetric("標準工時加權達成率", "86.0%", "Σ(完成量÷標準人效) ÷ Σ實際作業工時｜目標100%", "warning")}${executiveMetric("報工完整率", "96.0%", "已報作業工時 ÷ 應報工時｜目標98%", "warning")}${executiveMetric("人力使用率", "108.0%", "實際耗用人力 ÷ 當日安排人力｜編制不足", "danger")}${executiveMetric("未達標作業", "2項", "同一公式版本2026-07-15-dashboard-v2", "danger")}</div>
-    <div class="labor-dashboard-grid"><section class="dark-panel"><div class="panel-heading"><h3>作業別加權達成率</h3><span>不同單位先換算標準工時</span></div><div class="labor-bars">${activities.map(([label, value, statusLabel]) => `<button type="button" data-dashboard-drilldown data-warehouse="${state.warehouse.code}" data-flow="labor" data-status="${statusLabel}"><strong>${label}</strong><span><i style="width:${Math.min(value, 120) / 1.2}%"></i></span><b>${value}%<small>${statusLabel}</small></b></button>`).join("")}</div></section>
-    <section class="dark-panel"><h3>作業工時分布</h3><div class="hour-distribution"><span style="--share:32%">揀貨 32%</span><span style="--share:24%">包裝 24%</span><span style="--share:18%">入庫 18%</span><span style="--share:14%">覆核 14%</span><span style="--share:12%">其他 12%</span></div><small>報工不完整時標記資料品質，不解讀成高效率。</small></section>
-    <section class="dark-panel"><h3>場內編制評估</h3><div class="staffing-list"><p><strong>包裝</strong><span>投入5人／需求8人</span><b>編制不足3人</b></p><p><strong>揀貨</strong><span>投入7人／需求7人</span><b>合理</b></p><p><strong>入庫</strong><span>投入4人／需求3人</span><b>人力偏多1人</b></p></div></section></div>${renderTable(columns, rows)}</section>`;
-}
-
-function renderExceptionDashboard(dashboardText) {
-  const columns = ["異常單", "倉別", "作業", "分級", "Aging", "SLA", "已確認根因", "責任單位", "改善證據", "複核人", "結案狀態"];
-  const rows = [["EX-260709-001", "WH05", "包裝", "P1", "3:25", "逾時", "包裝人力缺口3人", "包裝組", "待補", "未複核", "未結"]];
-  setCurrentExport("Dashboard_異常責任與閉環", columns, rows);
-  return `<section class="dark-dashboard accountable-dashboard">${pageHeader("異常責任與閉環", dashboardText, "Dashboard")}${renderDataQualityBanner({ period: "2026-07-09 原型假資料", updatedAt: "原型資料", completeness: "異常主檔示意" })}
-    <div class="executive-kpi-grid">${executiveMetric("P1未結", "8件", "分級=P1且結案狀態=未結", "danger")}${executiveMetric("SLA逾時", "2件", "目前時間超過SLA截止時間", "danger")}${executiveMetric("根因確認率", "62.5%", "已確認根因案件 ÷ 應確認案件", "warning")}${executiveMetric("結案率", "55.0%", "具改善證據且已複核案件 ÷ 應結案件", "warning")}</div>
-    <div class="exception-dashboard-grid"><section class="dark-panel"><h3>案件 Aging</h3><div class="aging-buckets"><span>0–2h<strong>9</strong></span><span>2–4h<strong>5</strong></span><span>4–8h<strong>2</strong></span><span>8h以上<strong>2</strong></span></div></section><section class="dark-panel"><h3>已確認根因 Pareto</h3><div class="cause-list"><p>人力缺口 <b>6</b></p><p>資料缺漏 <b>4</b></p><p>設備異常 <b>3</b></p><p>庫存不可用 <b>2</b></p></div></section><section class="dark-panel"><h3>責任、改善證據與複核</h3><p>無根因、無改善證據或無複核人時不得結案。</p><div class="insufficient-state">3件責任未定｜4件改善證據待補｜2件待複核</div></section></div>${renderTable(columns, rows)}</section>`;
-}
-
-function renderCostDashboard(dashboardText) {
-  const columns = ["日期", "倉別", "費用類型", "金額", "訂單母數", "PCS母數", "每單成本", "每PCS成本", "分攤規則版本", "資料狀態"];
-  const rows = [["2026-07-09", state.warehouse.code, "資料不足", "-", "-", "-", "資料不足", "資料不足", "未介接", "禁止排名"]];
-  setCurrentExport("Dashboard_營運成本與單位成本", columns, rows);
-  return `<section class="dark-dashboard accountable-dashboard">${pageHeader("營運成本與單位成本", dashboardText, "Dashboard")}${renderDataQualityBanner({ period: "尚未介接", updatedAt: "未更新", completeness: "缺分攤規則與作業母數" })}
-    <div class="executive-kpi-grid">${executiveMetric("總營運成本", "資料不足", "人力＋OT＋委外＋配送＋包材＋異常成本", "insufficient")}${executiveMetric("每單成本", "資料不足", "總營運成本 ÷ 已完成訂單數", "insufficient")}${executiveMetric("每PCS成本", "資料不足", "總營運成本 ÷ 已出PCS", "insufficient")}${executiveMetric("異常成本", "資料不足", "需連回異常單及責任單位", "insufficient")}</div>
-    <div class="cost-dashboard-grid"><section class="dark-panel"><h3>成本趨勢與目標差異</h3><div class="insufficient-state">資料不足：正式費用來源未介接，不繪製趨勢</div></section><section class="dark-panel"><h3>費用差異拆解</h3><div class="cost-categories"><span>人力</span><span>OT</span><span>委外</span><span>配送</span><span>包材</span><span>異常</span></div><div class="insufficient-state">資料不足：缺少來源金額</div></section><section class="dark-panel"><h3>分攤規則版本</h3><p>缺少分攤規則版本、訂單母數或PCS母數時禁止跨倉排名。</p><div class="insufficient-state">目前版本：未介接</div></section></div>${renderTable(columns, rows)}</section>`;
 }
 
 function renderInventoryQuery() {
@@ -1262,37 +1073,24 @@ function renderOperationalModule() {
   return `
     ${pageHeader(state.activeChild, `${definition.problem} 本頁對應「每日必看報表」與PDA節點，避免左側功能只有入口沒有實際報表。`, mod.label)}
     ${renderColumnPanel(definition.columns)}
-    <section class="module-brief">
-      <div>
-        <strong>${definition.title}</strong>
-        <span>${definition.problem}</span>
-      </div>
-      <div>
-        <strong>PDA相輔相成</strong>
-        <span>開始、完成、異常、取消、重派、責任人與時間戳都要回寫到報表中心與Dashboard。</span>
-      </div>
-    </section>
     <section class="kpi-grid">
       ${definition.kpis.map(([label, value, note]) => kpi(label, value, note, mod.icon)).join("")}
     </section>
     ${renderTable(definition.columns, definition.rows)}
-    <section class="field-map">
-      <div class="field-chip"><strong>報表來源</strong><span>每日必看報表 / WMS單據 / PDA Log / Daily_DB</span></div>
-      <div class="field-chip"><strong>下鑽邏輯</strong><span>倉別→作業大類→單據→SKU→批號/效期→儲位→人員</span></div>
-      <div class="field-chip"><strong>權限提醒</strong><span>副總看趨勢，部長看倉別與人員，組長與作業員看自己的任務與異常。</span></div>
-    </section>
   `;
 }
 
 function renderReportToolbar() {
   return `
     <section class="report-toolbar">
-      <input value="2026-07-09" aria-label="日期" />
+      <input type="date" value="${state.reportFilters.businessDate}" aria-label="營運日期" data-filter="businessDate" />
       <select aria-label="倉別"><option>${state.warehouse.code} ${state.warehouse.name}</option><option>全倉</option></select>
-      <select aria-label="狀態"><option>全部狀態</option><option>P1異常</option><option>未完成</option><option>已完成</option></select>
-      <input placeholder="單號 / SKU / 批號 / 人員" />
+      <select aria-label="狀態" data-filter="status">
+        ${["全部狀態", "已上架", "上架中", "QC待確認", "判定完成", "待採購／GDP確認"].map((option) => `<option ${option === state.reportFilters.status ? "selected" : ""}>${option}</option>`).join("")}
+      </select>
+      <input value="${state.reportFilters.keyword}" placeholder="單號 / SKU / 批號 / 人員" aria-label="關鍵字" data-filter="keyword" />
       <select aria-label="Daily"><option>可進Daily統計</option><option>需補資料</option><option>僅明細追蹤</option></select>
-      <button class="action-button primary" type="button"><i data-lucide="search"></i>查詢</button>
+      <button class="action-button primary" type="button" data-action="query-report"><i data-lucide="search"></i>查詢</button>
     </section>
   `;
 }
@@ -1315,9 +1113,9 @@ function renderWarehouseComparison(title, rows) {
     ${title ? `<h3>${title}</h3>` : ""}
     <div class="ranking-list">
       ${rows.map((row, index) => `
-        <div class="ranking-row ${row.code === state.warehouse.code ? "is-current-warehouse" : ""}">
+        <div class="ranking-row ${row.code === state.warehouse.code ? "is-active" : ""}">
           <span>${index + 1}</span>
-          <strong>${row.code} ${row.name}${row.code === state.warehouse.code ? '<small class="current-warehouse-label">目前查看</small>' : ""}</strong>
+          <strong>${row.code} ${row.name}</strong>
           <div class="rank-metrics">
             <em>出貨 ${row.complete}%</em>
             <em>入庫 ${row.inbound}%</em>
@@ -1356,23 +1154,37 @@ function toggleColumnPanel() {
 
 function downloadCurrentReport() {
   const { title, columns, rows } = state.currentExport;
-  const csv = [
-    columns.map(escapeCsv).join(","),
-    ...rows.map((row) => row.map((cell) => escapeCsv(stripHtml(String(cell)))).join(","))
-  ].join("\n");
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const workbook = createXlsxWorkbook([{ name: title, columns, rows: rows.map((row) => row.map((cell) => typeof cell === "number" ? cell : stripHtml(String(cell)))) }]);
+  downloadBlob(`${title}_${state.warehouse.code}.xlsx`, workbook, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+function downloadQuarterWorkbook() {
+  const kpiModel = getQuarterlyKpiModel(state.quarterlyFilters);
+  const milestoneModel = getQuarterlyMilestoneModel(state.quarterlyFilters);
+  const workbook = createXlsxWorkbook(buildQuarterWorkbookSheets(kpiModel, milestoneModel));
+  downloadBlob(`大樹WMS_${state.quarterlyFilters.year}${state.quarterlyFilters.quarter}_季度報表.xlsx`, workbook, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+function downloadReportCenterWorkbook() {
+  const { title, sheets } = state.reportCenterWorkbook;
+  const workbook = createXlsxWorkbook(sheets);
+  downloadBlob(
+    `${title}.xlsx`,
+    workbook,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+}
+
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${title}_${state.warehouse.code}.csv`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
-}
-
-function escapeCsv(value) {
-  return `"${String(value).replace(/"/g, '""')}"`;
 }
 
 function stripHtml(value) {
@@ -1420,37 +1232,46 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  const dashboardPoint = event.target.closest("[data-dashboard-point]");
+  if (dashboardPoint) {
+    const [chartId, pointId] = dashboardPoint.dataset.dashboardPoint.split("|");
+    state.dashboardSelection = { chartId, pointId };
+    renderPage();
+    refreshIcons();
+    return;
+  }
+
+  if (event.target.closest("[data-dashboard-detail-close]")) {
+    state.dashboardSelection = null;
+    renderPage();
+    refreshIcons();
+    return;
+  }
+
   const warehouseButton = event.target.closest("#warehouseButton");
   if (warehouseButton) {
     document.querySelector("#warehouseMenu").classList.toggle("is-hidden");
     return;
   }
 
-  const dashboardDrilldown = event.target.closest("[data-dashboard-drilldown]");
-  if (dashboardDrilldown) {
-    const targetWarehouse = warehouses.find((item) => item.code === dashboardDrilldown.dataset.warehouse);
-    if (targetWarehouse) state.warehouse = targetWarehouse;
-    if (dashboardDrilldown.dataset.flow === "outbound") {
-      state.activeModule = "outbound";
-      state.activeChild = "出貨履約總覽";
-    } else {
-      state.activeModule = "home";
-      state.activeChild = "今日工作台";
-    }
-    state.showColumnPanel = false;
-    render();
-    return;
-  }
-
   const warehouseOption = event.target.closest("[data-warehouse]");
   if (warehouseOption) {
     state.warehouse = warehouses.find((item) => item.code === warehouseOption.dataset.warehouse);
+    if (state.dailyReportFilters.warehouseCode !== "ALL") {
+      state.dailyReportFilters.warehouseCode = state.warehouse.code;
+      state.dailyReportFilters.reportId = "";
+    }
     document.querySelector("#warehouseMenu").classList.add("is-hidden");
-    if ((state.activeModule === "gdp" && !isGdpWarehouse()) || (state.activeModule === "returns" && state.warehouse.code !== "WH06")) {
+    if (state.activeModule === "gdp" && !isGdpWarehouse()) {
       state.activeModule = "home";
       state.activeChild = moduleById("home").defaultChild;
     }
+    const visibleChildren = getVisibleChildren(state.warehouse.code, state.activeModule);
+    if (!visibleChildren.includes(state.activeChild)) {
+      state.activeChild = visibleChildren[0] || moduleById("home").defaultChild;
+    }
     state.showColumnPanel = false;
+    state.dashboardSelection = null;
     render();
     return;
   }
@@ -1459,8 +1280,10 @@ document.addEventListener("click", (event) => {
   if (moduleButton) {
     const mod = moduleById(moduleButton.dataset.module);
     state.activeModule = mod.id;
-    state.activeChild = mod.defaultChild;
+    const visibleChildren = getVisibleChildren(state.warehouse.code, mod.id);
+    state.activeChild = visibleChildren.includes(mod.defaultChild) ? mod.defaultChild : visibleChildren[0];
     state.showColumnPanel = false;
+    state.dashboardSelection = null;
     render();
     return;
   }
@@ -1469,6 +1292,7 @@ document.addEventListener("click", (event) => {
   if (childButton) {
     state.activeChild = childButton.dataset.child;
     state.showColumnPanel = false;
+    state.dashboardSelection = null;
     renderSideNav();
     renderPage();
     refreshIcons();
@@ -1481,21 +1305,281 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  const p1CategoryButton = event.target.closest("[data-p1-category]");
-  if (p1CategoryButton) {
-    state.expandedP1Category = state.expandedP1Category === p1CategoryButton.dataset.p1Category ? null : p1CategoryButton.dataset.p1Category;
+  const action = event.target.closest("[data-action]");
+  const dailyDimension = event.target.closest("[data-report-dimension]");
+  if (dailyDimension) {
+    state.dailyReportFilters.dimension = dailyDimension.dataset.reportDimension;
+    state.dailyReportFilters.reportId = "";
     renderPage();
     refreshIcons();
     return;
   }
-
-  const action = event.target.closest("[data-action]");
+  const dailyReport = event.target.closest("[data-daily-report]");
+  if (dailyReport) {
+    state.dailyReportFilters.reportId = dailyReport.dataset.dailyReport;
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const dailyWarehouse = event.target.closest("[data-daily-warehouse]");
+  if (dailyWarehouse) {
+    state.dailyReportFilters.warehouseCode = dailyWarehouse.dataset.dailyWarehouse;
+    state.dailyReportFilters.reportId = "";
+    state.warehouse = warehouses.find(
+      (item) => item.code === dailyWarehouse.dataset.dailyWarehouse
+    );
+    render();
+    return;
+  }
+  const monthlyDimension = event.target.closest("[data-monthly-dimension]");
+  if (monthlyDimension) {
+    state.monthlyUi.selectedDimension = monthlyDimension.dataset.monthlyDimension;
+    state.monthlyUi.selectedMetricId = "";
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const monthlyMetric = event.target.closest("[data-monthly-metric]");
+  if (monthlyMetric) {
+    const monthlyModel = getMonthlyReportModel(state.monthlyReportFilters);
+    const metric = monthlyModel.dimensions
+      .flatMap((item) => item.metrics)
+      .find((item) => item.metricId === monthlyMetric.dataset.monthlyMetric);
+    if (metric) {
+      const target = getDailyDrilldownTarget(monthlyModel.filters, metric);
+      state.dailyReportFilters = {
+        businessDate: target.businessDate,
+        warehouseCode: target.warehouseCode,
+        dimension: target.dimension,
+        reportId: target.reportId,
+        status: target.status,
+        keyword: target.keyword
+      };
+      state.warehouse =
+        warehouses.find((item) => item.code === target.warehouseCode) ||
+        state.warehouse;
+      state.activeChild = "Daily報表中心";
+      render();
+    }
+    return;
+  }
+  const keyDimension = event.target.closest("[data-key-dimension]");
+  if (keyDimension) {
+    state.keyNumberUi.selectedDimension = keyDimension.dataset.keyDimension;
+    state.keyNumberUi.selectedMetricId = "";
+    state.keyNumberUi.expenseLevel = "summary";
+    state.keyNumberUi.selectedExpenseCategory = "";
+    state.keyNumberUi.selectedAccountName = "";
+    state.keyNumberUi.selectedExpenseItem = "";
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const keyMetric = event.target.closest("[data-key-metric]");
+  if (keyMetric) {
+    state.keyNumberUi.selectedMetricId = keyMetric.dataset.keyMetric;
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const expenseEntry = event.target.closest("[data-expense-entry]");
+  if (expenseEntry) {
+    state.keyNumberUi.expenseLevel = "category";
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const expenseCategory = event.target.closest("[data-expense-category]");
+  if (expenseCategory) {
+    state.keyNumberUi.expenseLevel = "detail";
+    state.keyNumberUi.selectedExpenseCategory =
+      expenseCategory.dataset.expenseCategory;
+    state.keyNumberUi.selectedAccountName = "";
+    state.keyNumberUi.selectedExpenseItem = "";
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const expenseAccount = event.target.closest("[data-expense-account]");
+  if (expenseAccount) {
+    state.keyNumberUi.selectedAccountName = expenseAccount.dataset.expenseAccount;
+    state.keyNumberUi.selectedExpenseItem = "";
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const expenseItem = event.target.closest("[data-expense-item]");
+  if (expenseItem) {
+    state.keyNumberUi.selectedExpenseItem = expenseItem.dataset.expenseItem;
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const quarterExport = event.target.closest("[data-quarter-export]");
+  if (quarterExport) {
+    if (quarterExport.dataset.quarterExport === "workbook") downloadQuarterWorkbook();
+    else downloadCurrentReport();
+    return;
+  }
+  const quarterTab = event.target.closest("[data-quarter-tab]");
+  if (quarterTab) {
+    state.quarterlyTab = quarterTab.dataset.quarterTab;
+    state.selectedQuarterlyPoint = "";
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const quarterGranularity = event.target.closest("[data-quarter-granularity]");
+  if (quarterGranularity) {
+    state.quarterlyGranularity = quarterGranularity.dataset.quarterGranularity;
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const quarterMetric = event.target.closest("[data-quarter-metric]");
+  if (quarterMetric) {
+    state.selectedQuarterlyMetricId = quarterMetric.dataset.quarterMetric;
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  const quarterPoint = event.target.closest("[data-quarter-point]");
+  if (quarterPoint) {
+    state.selectedQuarterlyPoint = quarterPoint.dataset.quarterPoint;
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  if (action?.dataset.action === "query-quarter") {
+    state.quarterlyFilters = {
+      year: Number(document.querySelector('[data-quarter-filter="year"]')?.value || 2026),
+      quarter: document.querySelector('[data-quarter-filter="quarter"]')?.value || "Q3",
+      warehouseCode: document.querySelector('[data-quarter-filter="warehouseCode"]')?.value || "ALL",
+      dimension: document.querySelector('[data-quarter-filter="dimension"]')?.value || "全部面向",
+      status: document.querySelector('[data-quarter-filter="status"]')?.value || "全部狀態",
+      keyword: document.querySelector('[data-quarter-filter="keyword"]')?.value || ""
+    };
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  if (action?.dataset.action === "query-daily-report") {
+    const warehouseCode =
+      document.querySelector('[data-daily-filter="warehouseCode"]')?.value ||
+      state.warehouse.code;
+    state.dailyReportFilters = {
+      businessDate:
+        document.querySelector('[data-daily-filter="businessDate"]')?.value ||
+        state.dailyReportFilters.businessDate,
+      warehouseCode,
+      dimension:
+        document.querySelector('[data-daily-filter="dimension"]')?.value ||
+        "全部方向",
+      reportId: "",
+      status:
+        document.querySelector('[data-daily-filter="status"]')?.value ||
+        "全部狀態",
+      keyword:
+        document.querySelector('[data-daily-filter="keyword"]')?.value || ""
+    };
+    if (warehouseCode !== "ALL") {
+      state.warehouse =
+        warehouses.find((item) => item.code === warehouseCode) || state.warehouse;
+    }
+    render();
+    return;
+  }
+  if (action?.dataset.action === "query-monthly-report") {
+    state.monthlyReportFilters = {
+      yearMonth:
+        document.querySelector('[data-monthly-filter="yearMonth"]')?.value ||
+        "2026-07",
+      warehouseCode:
+        document.querySelector('[data-monthly-filter="warehouseCode"]')?.value ||
+        "ALL",
+      compareMode:
+        document.querySelector('[data-monthly-filter="compareMode"]')?.value ||
+        "上月",
+      dimension:
+        document.querySelector('[data-monthly-filter="dimension"]')?.value ||
+        "全部方向",
+      keyword:
+        document.querySelector('[data-monthly-filter="keyword"]')?.value || ""
+    };
+    state.monthlyUi.selectedDimension =
+      state.monthlyReportFilters.dimension === "全部方向"
+        ? "進貨"
+        : state.monthlyReportFilters.dimension;
+    state.monthlyUi.selectedMetricId = "";
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  if (action?.dataset.action === "query-key-numbers") {
+    state.keyNumberFilters = {
+      yearMonth:
+        document.querySelector('[data-key-filter="yearMonth"]')?.value ||
+        "2026-07",
+      warehouseCode:
+        document.querySelector('[data-key-filter="warehouseCode"]')?.value ||
+        "ALL",
+      compareMode:
+        document.querySelector('[data-key-filter="compareMode"]')?.value ||
+        "上月",
+      dimension:
+        document.querySelector('[data-key-filter="dimension"]')?.value ||
+        "全部方向",
+      keyword:
+        document.querySelector('[data-key-filter="keyword"]')?.value || ""
+    };
+    state.keyNumberUi.selectedDimension =
+      state.keyNumberFilters.dimension === "全部方向"
+        ? "進貨"
+        : state.keyNumberFilters.dimension;
+    state.keyNumberUi.selectedMetricId = "";
+    state.keyNumberUi.expenseLevel = "summary";
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  if (action?.dataset.action === "save-operational-note") {
+    const form = action.closest("[data-note-entity-type]");
+    state.operationalNotes = appendOperationalNote(state.operationalNotes, {
+      entityType: form.dataset.noteEntityType,
+      entityId: form.dataset.noteEntityId,
+      authorId: "LOCAL-MANAGER",
+      responsibleUnit:
+        form.querySelector('[data-note-field="responsibleUnit"]')?.value || "待指派",
+      responsiblePerson:
+        form.querySelector('[data-note-field="responsiblePerson"]')?.value || "待指派",
+      dueDate: form.querySelector('[data-note-field="dueDate"]')?.value || "",
+      text: form.querySelector('[data-note-field="text"]')?.value || "",
+      createdAt: new Date().toISOString()
+    });
+    renderPage();
+    refreshIcons();
+    return;
+  }
+  if (action?.dataset.action === "export-report-center") {
+    downloadReportCenterWorkbook();
+    return;
+  }
   if (action?.dataset.action === "export-report") {
     downloadCurrentReport();
     return;
   }
   if (action?.dataset.action === "column-settings") {
     toggleColumnPanel();
+    return;
+  }
+  if (action?.dataset.action === "query-report") {
+    state.reportFilters = {
+      businessDate: document.querySelector('[data-filter="businessDate"]')?.value || "",
+      status: document.querySelector('[data-filter="status"]')?.value || "全部狀態",
+      keyword: document.querySelector('[data-filter="keyword"]')?.value || ""
+    };
+    renderPage();
+    refreshIcons();
   }
 });
 
